@@ -1,0 +1,9 @@
+crons:
+  - name: lembretes-diarios
+    description: "Envia lembretes de WhatsApp às 9h (Brasília) para os agendamentos do dia seguinte"
+    cron: "0 9 * * *"
+    timezone: "America/Sao_Paulo"
+    endpoint: "{{BASE_URL}}/api/cron/reminders"
+    method: POST
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    enabled: true

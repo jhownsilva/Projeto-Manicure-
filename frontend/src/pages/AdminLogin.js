@@ -33,7 +33,7 @@ export default function AdminLogin() {
           <span className="w-9 h-9 rounded-full bg-gradient-to-br from-[#D47385] to-[#C59B27] flex items-center justify-center">
             <Sparkles size={16} className="text-white" />
           </span>
-          <span className="font-serif-display text-xl text-[#2A1E22] font-semibold">Studio Gel & Beauty</span>
+          <span className="font-serif-display text-xl text-[#2A1E22] font-semibold">Painel do Salão</span>
         </Link>
         <div className="card-luxe p-8">
           <div className="flex items-center gap-2 accent-label mb-2"><Lock size={12} /> Área da profissional</div>

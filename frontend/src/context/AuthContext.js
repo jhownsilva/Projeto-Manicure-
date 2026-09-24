@@ -23,13 +23,14 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });
     if (data?.token) localStorage.setItem("access_token", data.token);
-    setUser(data.user);
+    await check();
     return data.user;
   };
 
   const logout = async () => {
     try { await api.post("/auth/logout"); } catch {}
     localStorage.removeItem("access_token");
+    localStorage.removeItem("active_tenant");
     setUser(false);
   };
 

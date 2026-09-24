@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRight, Check, Clock, Sparkles, MessageCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Clock, Sparkles, MessageCircle, CreditCard } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { api, formatApiError } from "@/lib/api";
+import { useTenant } from "@/context/TenantContext";
 
 function useQueryParam(name) {
   const { search } = useLocation();
@@ -22,7 +23,8 @@ function ymd(d) {
 
 export default function Booking() {
   const preset = useQueryParam("service");
-  const navigate = useNavigate();
+  const cancelled = useQueryParam("cancelled");
+  const { slug, base, salon } = useTenant();
   const [step, setStep] = useState(1);
   const [services, setServices] = useState([]);
   const [service, setService] = useState(null);
@@ -33,17 +35,19 @@ export default function Booking() {
   const [form, setForm] = useState({ name: "", phone: "", email: "", notes: "" });
   const [confirming, setConfirming] = useState(false);
   const [confirmation, setConfirmation] = useState(null);
-  const [salon, setSalon] = useState({ name: "Studio Gel & Beauty", whatsapp: "5511999999999" });
 
   useEffect(() => {
-    api.get("/services").then((r) => {
+    if (cancelled) toast.info("Pagamento do sinal cancelado. Seu agendamento continua aguardando confirmação.");
+  }, [cancelled]);
+
+  useEffect(() => {
+    api.get(`/public/${slug}/services`).then((r) => {
       setServices(r.data);
       if (preset) {
         const found = r.data.find((s) => s.id === preset);
         if (found) { setService(found); setStep(2); }
       }
     }).catch(() => {});
-    api.get("/salon").then((r) => setSalon(r.data)).catch(() => {});
 
     const arr = [];
     const today = new Date();
@@ -52,15 +56,15 @@ export default function Booking() {
       arr.push(d);
     }
     setDates(arr);
-  }, [preset]);
+  }, [preset, slug]);
 
   useEffect(() => {
     if (!service || !selectedDate) return;
     setSlots([]); setSelectedTime(null);
-    api.get(`/services/${service.id}/slots`, { params: { date: ymd(selectedDate) } })
+    api.get(`/public/${slug}/services/${service.id}/slots`, { params: { date: ymd(selectedDate) } })
       .then((r) => setSlots(r.data.slots || []))
       .catch((e) => toast.error(formatApiError(e)));
-  }, [service, selectedDate]);
+  }, [service, selectedDate, slug]);
 
   const chooseService = (s) => { setService(s); setStep(2); };
   const goStep = (n) => setStep(n);
@@ -73,7 +77,7 @@ export default function Booking() {
     }
     setConfirming(true);
     try {
-      const { data } = await api.post("/bookings", {
+      const { data } = await api.post(`/public/${slug}/bookings`, {
         service_id: service.id,
         date: ymd(selectedDate),
         time: selectedTime,
@@ -83,7 +87,7 @@ export default function Booking() {
         notes: form.notes,
       });
       setConfirmation(data);
-      toast.success("Agendamento criado! Confirme no WhatsApp.");
+      toast.success(data.whatsapp_mode === "cloud" ? "Agendamento criado! Enviamos a confirmação no seu WhatsApp." : "Agendamento criado! Confirme no WhatsApp.");
     } catch (e) {
       toast.error(formatApiError(e));
     } finally {
@@ -93,7 +97,7 @@ export default function Booking() {
 
   return (
     <div className="min-h-screen">
-      <Navbar salonName={salon.name} />
+      <Navbar salonName={salon.name} base={base} />
       <div className="max-w-3xl mx-auto px-5 sm:px-8 py-10">
         {/* Progress */}
         <div className="flex items-center gap-2 mb-8" data-testid="booking-stepper">
@@ -108,7 +112,7 @@ export default function Booking() {
         </div>
 
         {confirmation ? (
-          <ConfirmationView data={confirmation} onNew={() => { setConfirmation(null); setStep(1); setService(null); setSelectedDate(null); setSelectedTime(null); setForm({ name:"", phone:"", email:"", notes:"" }); }} />
+          <ConfirmationView data={confirmation} slug={slug} base={base} onNew={() => { setConfirmation(null); setStep(1); setService(null); setSelectedDate(null); setSelectedTime(null); setForm({ name:"", phone:"", email:"", notes:"" }); }} />
         ) : step === 1 ? (
           <div>
             <h1 className="font-serif-display text-3xl sm:text-4xl text-[#2A1E22] mb-2">Escolha o serviço</h1>
@@ -232,8 +236,23 @@ function Field({ label, value, onChange, required, testId, placeholder, type="te
   );
 }
 
-function ConfirmationView({ data, onNew }) {
+function ConfirmationView({ data, slug, base, onNew }) {
   const b = data.booking;
+  const dep = data.deposit || {};
+  const [paying, setPaying] = useState(false);
+  const money = (v) => `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
+
+  const payDeposit = async () => {
+    setPaying(true);
+    try {
+      const { data: r } = await api.post(`/public/${slug}/bookings/${b.id}/deposit`, { origin_url: window.location.origin });
+      window.location.href = r.checkout_url;
+    } catch (e) {
+      toast.error(formatApiError(e));
+      setPaying(false);
+    }
+  };
+
   return (
     <div className="card-luxe p-8 text-center" data-testid="booking-confirmation">
       <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#D47385] to-[#C59B27] mx-auto flex items-center justify-center mb-4">
@@ -244,14 +263,32 @@ function ConfirmationView({ data, onNew }) {
         {b.service_name} em {b.date.split("-").reverse().join("/")} às {b.time} para <strong>{b.client_name}</strong>.
       </p>
       <div className="chip mx-auto mb-6">Status: aguardando confirmação</div>
+
+      {dep.enabled && dep.amount > 0 && (
+        <div className="rounded-2xl border border-[#E2C889] bg-[#FAF0D7]/50 p-5 mb-4 text-left" data-testid="deposit-box">
+          <div className="flex items-start gap-3">
+            <CreditCard size={20} className="text-[#C59B27] mt-0.5" />
+            <div className="flex-1">
+              <div className="font-semibold text-[#2A1E22]">Garanta seu horário com um sinal (opcional)</div>
+              <div className="text-sm text-[#6E555E] mt-1">
+                Pague {dep.percent}% agora ({money(dep.amount)}) e seu agendamento fica confirmado na hora. O restante é pago no salão.
+              </div>
+            </div>
+          </div>
+          <button onClick={payDeposit} disabled={paying} className="btn-primary w-full mt-4 inline-flex items-center justify-center gap-2 disabled:opacity-50" data-testid="pay-deposit-btn">
+            {paying ? "Redirecionando..." : <><CreditCard size={16} /> Pagar sinal de {money(dep.amount)}</>}
+          </button>
+        </div>
+      )}
+
       <a href={data.whatsapp_link} target="_blank" rel="noreferrer noopener"
-         className="btn-primary w-full inline-flex items-center justify-center gap-2 mb-3"
+         className={`${dep.enabled ? "btn-ghost" : "btn-primary"} w-full inline-flex items-center justify-center gap-2 mb-3`}
          data-testid="whatsapp-confirm-btn">
-        <MessageCircle size={18} /> Confirmar no WhatsApp
+        <MessageCircle size={18} /> {dep.enabled ? "Prefiro confirmar no WhatsApp" : "Confirmar no WhatsApp"}
       </a>
       <button onClick={onNew} className="btn-ghost w-full" data-testid="new-booking-btn">Agendar outro horário</button>
       <div className="mt-6">
-        <Link to="/" className="text-sm text-[#B38059] hover:underline" data-testid="back-home-link">Voltar para o início</Link>
+        <Link to={base || "/"} className="text-sm text-[#B38059] hover:underline" data-testid="back-home-link">Voltar para o início</Link>
       </div>
     </div>
   );

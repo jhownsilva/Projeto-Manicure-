@@ -2,10 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Calendar, Users, DollarSign, Clock, LogOut, Plus, Trash2, Edit3,
-  MessageCircle, Ban, Sparkles, CheckCircle2, XCircle, Bell
+  Ban, Sparkles, CheckCircle2, XCircle, Bell, Settings, Building2, ShieldCheck
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
+import SettingsTab from "@/components/admin/SettingsTab";
+import TenantsTab from "@/components/admin/TenantsTab";
+import RemindersTab from "@/components/admin/RemindersTab";
 
 const TABS = [
   { id: "agenda", label: "Agenda", icon: Calendar },
@@ -13,6 +16,8 @@ const TABS = [
   { id: "bloqueios", label: "Bloqueios", icon: Ban },
   { id: "clientes", label: "Clientes", icon: Users },
   { id: "lembretes", label: "Lembretes", icon: Bell },
+  { id: "config", label: "Configurações", icon: Settings },
+  { id: "saloes", label: "Salões", icon: Building2, superadmin: true },
 ];
 
 function ymd(d) {
@@ -21,7 +26,7 @@ function ymd(d) {
 }
 
 export default function AdminDashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, refresh } = useAuth();
   const [tab, setTab] = useState("agenda");
   const [stats, setStats] = useState(null);
   const [range, setRange] = useState("today"); // today | week | month
@@ -29,7 +34,16 @@ export default function AdminDashboard() {
   const [services, setServices] = useState([]);
   const [clients, setClients] = useState([]);
   const [blocks, setBlocks] = useState([]);
-  const [reminders, setReminders] = useState({ items: [], date: "" });
+  const isSuper = user?.role === "superadmin";
+  const activeSlug = user?.tenant?.slug;
+
+  const switchTenant = async (slug) => {
+    localStorage.setItem("active_tenant", slug);
+    await refresh();
+    loadStats();
+    setTab("agenda");
+    toast.success("Salão alterado");
+  };
 
   const loadStats = () => api.get("/stats").then((r) => setStats(r.data)).catch((e) => toast.error(formatApiError(e)));
   const loadBookings = () => {
@@ -51,48 +65,55 @@ export default function AdminDashboard() {
   const loadServices = () => api.get("/services", { params: { all: true } }).then((r) => setServices(r.data));
   const loadClients = () => api.get("/clients").then((r) => setClients(r.data));
   const loadBlocks = () => api.get("/blocks").then((r) => setBlocks(r.data));
-  const loadReminders = () => api.get("/reminders").then((r) => setReminders(r.data));
 
-  useEffect(() => { loadStats(); }, []);
-  useEffect(() => { if (tab === "agenda") loadBookings(); }, [tab, range]);
+  useEffect(() => { loadStats(); }, [activeSlug]);
+  useEffect(() => { if (tab === "agenda") loadBookings(); }, [tab, range, activeSlug]);
   useEffect(() => {
     if (tab === "servicos") loadServices();
     if (tab === "clientes") loadClients();
     if (tab === "bloqueios") loadBlocks();
-    if (tab === "lembretes") loadReminders();
-  }, [tab]);
+  }, [tab, activeSlug]);
 
   return (
     <div className="min-h-screen bg-[#FDF9F8]">
       <header className="bg-white/80 backdrop-blur-xl border-b border-[#EADCD7] sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-5 sm:px-8 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 py-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="w-8 h-8 rounded-full bg-gradient-to-br from-[#D47385] to-[#C59B27] flex items-center justify-center">
               <Sparkles size={16} className="text-white" />
             </span>
             <div>
-              <div className="font-serif-display text-lg text-[#2A1E22] font-semibold leading-tight">Painel Admin</div>
-              <div className="text-xs text-[#7D636D]">Olá, {user?.name?.split(" ")[0]}</div>
+              <div className="font-serif-display text-lg text-[#2A1E22] font-semibold leading-tight" data-testid="admin-salon-name">{user?.tenant?.name || "Painel Admin"}</div>
+              <div className="text-xs text-[#7D636D]">Olá, {user?.name?.split(" ")[0]}{isSuper && " · Super-admin"}</div>
             </div>
           </div>
-          <button onClick={logout} data-testid="logout-btn" className="btn-ghost inline-flex items-center gap-2 text-sm">
-            <LogOut size={14} /> Sair
-          </button>
+          <div className="flex items-center gap-2">
+            {isSuper && user?.tenants?.length > 0 && (
+              <select value={activeSlug || ""} onChange={(e) => switchTenant(e.target.value)} data-testid="tenant-switcher"
+                className="rounded-full border border-[#EADCD7] bg-white px-3 py-2 text-sm text-[#2A1E22] focus:border-[#D47385] focus:outline-none">
+                {user.tenants.map((t) => <option key={t.id} value={t.slug}>{t.name}</option>)}
+              </select>
+            )}
+            <button onClick={logout} data-testid="logout-btn" className="btn-ghost inline-flex items-center gap-2 text-sm">
+              <LogOut size={14} /> Sair
+            </button>
+          </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-5 sm:px-8 py-8">
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8" data-testid="stats-cards">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8" data-testid="stats-cards">
           <StatCard icon={Calendar} label="Hoje" value={stats?.today ?? "—"} color="#D47385" testId="stat-today" />
           <StatCard icon={Clock} label="Esta semana" value={stats?.week ?? "—"} color="#B38059" testId="stat-week" />
           <StatCard icon={DollarSign} label="Faturamento mês" value={stats ? `R$ ${stats.month_revenue.toFixed(2).replace(".", ",")}` : "—"} color="#C59B27" testId="stat-revenue" />
+          <StatCard icon={ShieldCheck} label="Sinais recebidos" value={stats ? `R$ ${(stats.deposits_month || 0).toFixed(2).replace(".", ",")}` : "—"} color="#6B478C" testId="stat-deposits" />
           <StatCard icon={Users} label="Clientes" value={stats?.clients ?? "—"} color="#2E7D32" testId="stat-clients" />
         </div>
 
         {/* Tabs */}
         <div className="flex gap-2 overflow-x-auto mb-6 pb-1" data-testid="admin-tabs">
-          {TABS.map((t) => (
+          {TABS.filter((t) => !t.superadmin || isSuper).map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}
               className={`flex-shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm transition-colors duration-200 ${
                 tab === t.id ? "bg-[#2A1E22] text-white" : "bg-white border border-[#EADCD7] text-[#4A353D] hover:border-[#D47385]"
@@ -106,7 +127,9 @@ export default function AdminDashboard() {
         {tab === "servicos" && <ServicesTab services={services} reload={loadServices} />}
         {tab === "bloqueios" && <BlocksTab blocks={blocks} reload={loadBlocks} />}
         {tab === "clientes" && <ClientsTab clients={clients} />}
-        {tab === "lembretes" && <RemindersTab data={reminders} reload={loadReminders} />}
+        {tab === "lembretes" && <RemindersTab key={activeSlug} />}
+        {tab === "config" && <SettingsTab key={activeSlug} onSaved={refresh} />}
+        {tab === "saloes" && isSuper && <TenantsTab onChanged={refresh} />}
       </main>
     </div>
   );
@@ -177,7 +200,12 @@ function AgendaTab({ range, setRange, bookings, reload }) {
                       <div className="text-sm text-[#6E555E]">{b.service_name} · R$ {b.service_price.toFixed(2).replace(".", ",")} · {b.service_duration} min</div>
                       <div className="text-xs text-[#7D636D] mt-1">{b.client_phone}</div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {b.deposit_status === "paid" && (
+                        <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-[#F0E7F6] text-[#6B478C] inline-flex items-center gap-1" data-testid={`deposit-paid-${b.id}`}>
+                          <ShieldCheck size={12} /> Sinal R$ {Number(b.deposit_amount || 0).toFixed(2).replace(".", ",")}
+                        </span>
+                      )}
                       {statusChip(b.status)}
                       {b.status !== "confirmed" && b.status !== "cancelled" && (
                         <button onClick={() => changeStatus(b.id, "confirmed")} data-testid={`confirm-${b.id}`} title="Confirmar" className="p-2 rounded-full hover:bg-[#E4F4E5] text-[#2E7D32]"><CheckCircle2 size={18} /></button>
@@ -338,38 +366,6 @@ function ClientsTab({ clients }) {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function RemindersTab({ data, reload }) {
-  return (
-    <div>
-      <div className="mb-4 text-sm text-[#6E555E]">
-        Simulação dos lembretes que serão enviados 1 dia antes ({data.date && data.date.split("-").reverse().join("/")}).
-        Toque em <em>Enviar no WhatsApp</em> para abrir a conversa com o texto pronto.
-      </div>
-      {(!data.items || data.items.length === 0) ? (
-        <div className="card-luxe p-8 text-center text-[#7D636D]" data-testid="reminders-empty">Nenhum lembrete para amanhã.</div>
-      ) : (
-        <div className="space-y-3" data-testid="reminders-list">
-          {data.items.map((r) => (
-            <div key={r.id} className="card-luxe p-5" data-testid={`reminder-row-${r.id}`}>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                <div className="font-serif-display text-xl text-[#C59B27] w-20">{r.time}</div>
-                <div className="flex-1">
-                  <div className="text-[#2A1E22] font-semibold">{r.client_name} · {r.service_name}</div>
-                  <div className="text-sm text-[#6E555E] mt-1">{r.preview}</div>
-                </div>
-                <a href={r.whatsapp_link} target="_blank" rel="noreferrer noopener" data-testid={`send-reminder-${r.id}`}
-                   className="btn-primary inline-flex items-center gap-2 text-sm">
-                  <MessageCircle size={14} /> Enviar no WhatsApp
-                </a>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
