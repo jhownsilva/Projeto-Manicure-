@@ -9,13 +9,13 @@ import logging
 import uuid
 import bcrypt
 import jwt
-from datetime import datetime, timezone, timedelta, date, time as dtime
-from typing import List, Optional
+from datetime import datetime, timezone, timedelta, time as dtime
+from typing import Optional
 
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, EmailStr
 
 # ---------------- MongoDB ----------------
 mongo_url = os.environ["MONGO_URL"]
@@ -155,24 +155,27 @@ async def list_services(all: bool = False):
     return items
 
 @api.get("/services/{service_id}/slots")
-async def available_slots(service_id: str, date: str):
+async def available_slots(service_id: str, date_str: str = None, date: str = None):
+    day = date_str or date
     svc = await db.services.find_one({"id": service_id}, {"_id": 0})
     if not svc:
         raise HTTPException(404, "Serviço não encontrado")
+    if not day:
+        raise HTTPException(400, "Data obrigatória")
     try:
-        d = datetime.strptime(date, "%Y-%m-%d").date()
+        d = datetime.strptime(day, "%Y-%m-%d").date()
     except Exception:
         raise HTTPException(400, "Data inválida")
 
     # existing bookings for the date (not cancelled)
     bookings = await db.bookings.find(
-        {"date": date, "status": {"$in": ["pending", "confirmed"]}}, {"_id": 0}
+        {"date": day, "status": {"$in": ["pending", "confirmed"]}}, {"_id": 0}
     ).to_list(500)
-    blocks = await db.blocks.find({"date": date}, {"_id": 0}).to_list(200)
+    blocks = await db.blocks.find({"date": day}, {"_id": 0}).to_list(200)
 
     full_day_blocked = any(b.get("time") in (None, "") for b in blocks)
     if full_day_blocked:
-        return {"date": date, "slots": []}
+        return {"date": day, "slots": []}
 
     booked_times = set()
     for b in bookings:
@@ -191,7 +194,7 @@ async def available_slots(service_id: str, date: str):
             available = False
         slots.append({"time": hhmm, "available": available})
         cur += timedelta(minutes=SLOT_MINUTES)
-    return {"date": date, "slots": slots}
+    return {"date": day, "slots": slots}
 
 @api.post("/bookings")
 async def create_booking(body: BookingIn):

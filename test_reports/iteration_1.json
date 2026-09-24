@@ -1,0 +1,26 @@
+{
+  "summary": "Latency-sensitive smoke test of PWA Salon booking app. Backend endpoints for services, salon, slots, bookings (incl. conflict), and auth login all pass. Frontend: landing loads with hero + services, admin protected route redirects when logged out, admin login (wrong/correct password) works with toast + redirect, admin dashboard shows stats + all 5 tabs, 3-step booking flow completes with WhatsApp confirmation link (wa.me), deep link /agendar?service={id} jumps to step 2, logout clears session and redirects to /admin/login. PWA manifest served correctly.",
+  "tested_scope": ["frontend", "backend", "auth", "integration"],
+  "passed": [
+    "GET /api/services returns 5 seeded services",
+    "GET /api/salon returns salon info (Studio Gel & Beauty)",
+    "GET /api/services/{id}/slots returns correct slot list with availability",
+    "POST /api/bookings creates booking with whatsapp_link (uses client_name/client_phone fields)",
+    "POST /api/bookings duplicate returns 409 Horário já reservado",
+    "POST /api/auth/login returns {token, user} with valid creds",
+    "Landing page loads: title, hero, services grid render",
+    "Protected /admin redirects to /admin/login when logged out",
+    "Admin login wrong password shows error toast",
+    "Admin login correct creds redirects to /admin, stats + all 5 tabs (agenda/servicos/bloqueios/clientes/lembretes) render",
+    "Booking 3-step flow: pick service -> date -> slot -> details -> confirm -> WhatsApp link visible with wa.me href",
+    "Deep link /agendar?service={id} jumps to step 2 (date & horario view)",
+    "Logout button clears session; /admin then redirects to /admin/login",
+    "/manifest.json served with name + icons"
+  ],
+  "failed": [],
+  "action_items": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "retest_needed": false,
+  "full_testing_deferred": true,
+  "notes": "Login response key is 'token' (not 'access_token'); frontend correctly stores it as localStorage.access_token. Booking API expects client_name/client_phone (not name/phone). Server 'today' during test was 2026-09-24 with all today-slots unavailable (past business hours in server timezone) — expected behavior. WhatsApp integration is MOCKED (wa.me deep links only, no real message send)."
+}
