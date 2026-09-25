@@ -1,0 +1,25 @@
+{
+  "summary": "Phase 2 (multi-tenant, deposit via Stripe, WhatsApp mock, cron reminders, super-admin) tested end-to-end. Backend: 24/24 pytest cases pass (public tenant endpoints, deposit flow, whatsapp mock persistence, cron auth + idempotency, tenant scoping for owner/superadmin, settings validation + revert, superadmin tenant CRUD, confirm-status → 'confirmed' message, blocks CRUD, service tenant isolation). Frontend: landing renders distinct hero_titles per tenant, slug-inexistente shows tenant-not-found. /s/gel-beauty booking flow displays deposit-box and pay-deposit-btn redirects to checkout.stripe.com. /s/barbearia-vintage booking omits deposit-box. /payment/success without session_id renders payment-result 'Pagamento não concluído'. Super-admin sees tenant-switcher + tab-saloes; switching to Barbearia Vintage reloads services (Corte Clássico, Barba Completa, Corte + Barba). New tenant creation via new-tenant-btn shows card. Settings deposit_percent 20→30 round-trip via PUT /api/settings verified through public salon endpoint. Reminders tab renders reminders-cron-card + run-reminders-btn + messages-log. Owner login (barbearia@demo.com) does NOT see tenant-switcher or tab-saloes.",
+  "tested_scope": ["backend", "frontend", "integration", "auth", "multi-tenant", "stripe", "whatsapp-mock", "cron"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_phase2.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is ~700 lines: acceptable but consider splitting auth/tenant/booking/admin routers into modules as it grows.",
+    "GET /api/cron/runs uses get_principal which requires a tenant; superadmin can access it via X-Tenant header. If an owner should also see runs of their own tenant only, add tenant_id filtering (currently returns all cron_runs across tenants).",
+    "AdminDashboard tenant delete relies on window.confirm; no page.on('dialog') was easy to intercept in tests — a proper modal confirmation with data-testid would be more testable.",
+    "Booking.js dates array is built with `new Date()` in local browser TZ then converted via ymd(); users in a different TZ than tenant.timezone may see slightly off day labels. Consider computing dates using tenant timezone.",
+    "payments.py silently swallows StripeError in status polling (line 109 pass). Consider logging."
+  ],
+  "updated_files": ["/app/backend/tests/test_phase2.py"],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "100%"},
+  "test_credentials": "Superadmin jonathan.alexandre20@gmail.com/Salao@2026, Owner barbearia@demo.com/Barber@2026. WEBHOOK_CRON_SECRET read from /app/backend/.env.",
+  "seed_data_creation": "Test bookings prefixed 'TEST' were created via API for gel-beauty and barbearia-vintage (future dates). Test tenant with slug qa-dentista-<rand> created and deleted within test. No permanent seed changes.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Full phase-2 regression at /app/backend/tests/test_phase2.py (pytest, 24 tests). WhatsApp is in mock mode (WHATSAPP_ACCESS_TOKEN empty) — messages saved with status 'mock'. Stripe is in test mode; deposit checkout returns real cs_test_ URLs. Do NOT delete default tenants gel-beauty or barbearia-vintage. Cron endpoint POST /api/cron/reminders requires Bearer WEBHOOK_CRON_SECRET; idempotent via run_id."
+}
